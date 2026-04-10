@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-twilio-sms-bridge",
+  "name": "twilio-sms-bridge",
   "version": "0.1.0",
   "description": "Twilio SMS channel plugin for OpenClaw",
   "type": "module",
