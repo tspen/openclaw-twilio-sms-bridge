@@ -179,9 +179,20 @@ async function processInboundSms({
     envelope: channel.reply.resolveEnvelopeFormatOptions(cfg),
     body,
   });
+  const smsInstruction = [
+    "[SMS reply mode]",
+    "Keep replies very short and plain.",
+    "Use ASCII only when possible.",
+    "Avoid emoji, markdown, smart quotes, and long explanations.",
+    "Clarity matters more than grammar.",
+    "If the answer is long, send a compressed version first.",
+    "Aim for one to two short SMS segments max.",
+    "",
+  ].join("\n");
+
   const ctxPayload = channel.reply.finalizeInboundContext({
     Body: formattedBody,
-    BodyForAgent: body,
+    BodyForAgent: `${smsInstruction}${body}`,
     RawBody: body,
     CommandBody: body,
     From: from,
