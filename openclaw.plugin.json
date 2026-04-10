@@ -1,0 +1,22 @@
+{
+  "id": "twilio-sms-bridge",
+  "name": "Twilio SMS Bridge",
+  "description": "Custom SMS channel plugin for OpenClaw via Twilio",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "accountSid": { "type": "string" },
+      "authToken": { "type": "string" },
+      "fromNumber": { "type": "string" },
+      "publicBaseUrl": { "type": "string" },
+      "webhookPath": { "type": "string", "default": "/twilio-sms/webhook" },
+      "allowFrom": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": []
+      },
+      "dmSecurity": { "type": "string", "default": "allowlist" }
+    },
+    "additionalProperties": false
+  }
+}

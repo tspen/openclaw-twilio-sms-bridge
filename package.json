@@ -1,0 +1,22 @@
+{
+  "name": "openclaw-twilio-sms-bridge",
+  "version": "0.1.0",
+  "description": "Twilio SMS channel plugin for OpenClaw",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "openclaw": {
+    "extensions": ["./index.ts", "./setup-entry.ts"],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2",
+      "minGatewayVersion": ">=2026.3.24-beta.2"
+    },
+    "build": {
+      "openclawVersion": "2026.3.24-beta.2",
+      "pluginSdkVersion": "2026.3.24-beta.2"
+    }
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.41"
+  }
+}
