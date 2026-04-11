@@ -7,7 +7,7 @@ export type TwilioSmsConfig = {
 const MAX_SMS_SEGMENTS = 1;
 const GSM_SINGLE_SEGMENT = 160;
 const GSM_MULTI_SEGMENT = 153;
-const SAFE_SMS_MAX_LEN = 140;
+const SAFE_SMS_MAX_LEN = 120;
 
 function normalizeSmsText(body: string): string {
   return body
@@ -28,9 +28,7 @@ function splitSmsText(body: string): string[] {
   if (!normalized) return [];
   if (normalized.length <= SAFE_SMS_MAX_LEN) return [normalized];
 
-  const truncated = normalized.length > SAFE_SMS_MAX_LEN
-    ? `${normalized.slice(0, SAFE_SMS_MAX_LEN - 3).trimEnd()}...`
-    : normalized;
+  const truncated = `${normalized.slice(0, SAFE_SMS_MAX_LEN - 3).trimEnd()}...`;
 
   const chunks: string[] = [];
   let remaining = truncated;

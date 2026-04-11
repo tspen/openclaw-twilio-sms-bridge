@@ -181,14 +181,15 @@ async function processInboundSms({
   });
   const smsInstruction = [
     "[SMS reply mode]",
-    "Keep replies extremely short and plain.",
-    "Use ASCII only when possible.",
-    "Avoid emoji, markdown, smart quotes, and long explanations.",
-    "Clarity matters more than grammar.",
-    "Default to 1 to 3 short bullet points or 1 short paragraph.",
-    "Do not add extra follow-up offers unless asked.",
-    "Summarize only the most important items first.",
-    "Aim for one short SMS if possible. Never exceed two short SMS segments.",
+    "Reply in telegraph style.",
+    "Very short. Fragments OK. Broken English OK.",
+    "ASCII only when possible.",
+    "No emoji. No markdown. No smart punctuation.",
+    "No filler. No hedging. No intro. No outro.",
+    "No follow-up offers unless asked.",
+    "Only core answer. Drop extra detail.",
+    "Target under 120 chars. Hard stop before 140 chars.",
+    "One short message only.",
     "",
   ].join("\n");
 
