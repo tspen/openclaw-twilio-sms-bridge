@@ -4,10 +4,10 @@ export type TwilioSmsConfig = {
   fromNumber: string;
 };
 
-const MAX_SMS_SEGMENTS = 2;
+const MAX_SMS_SEGMENTS = 1;
 const GSM_SINGLE_SEGMENT = 160;
 const GSM_MULTI_SEGMENT = 153;
-const SAFE_SMS_MAX_LEN = GSM_MULTI_SEGMENT * MAX_SMS_SEGMENTS;
+const SAFE_SMS_MAX_LEN = 140;
 
 function normalizeSmsText(body: string): string {
   return body
@@ -26,7 +26,7 @@ function normalizeSmsText(body: string): string {
 function splitSmsText(body: string): string[] {
   const normalized = normalizeSmsText(body);
   if (!normalized) return [];
-  if (normalized.length <= GSM_SINGLE_SEGMENT) return [normalized];
+  if (normalized.length <= SAFE_SMS_MAX_LEN) return [normalized];
 
   const truncated = normalized.length > SAFE_SMS_MAX_LEN
     ? `${normalized.slice(0, SAFE_SMS_MAX_LEN - 3).trimEnd()}...`
@@ -52,6 +52,12 @@ function splitSmsText(body: string): string[] {
   return chunks.filter(Boolean).slice(0, MAX_SMS_SEGMENTS);
 }
 
+function estimateSmsParts(body: string): number {
+  if (!body) return 0;
+  if (body.length <= GSM_SINGLE_SEGMENT) return 1;
+  return Math.ceil(body.length / GSM_MULTI_SEGMENT);
+}
+
 export async function sendTwilioSms(
   cfg: TwilioSmsConfig,
   to: string,
@@ -62,6 +68,14 @@ export async function sendTwilioSms(
   const fromNumber = cfg.fromNumber.trim();
   const parts = splitSmsText(body);
   if (!parts.length) return { sid: null };
+
+  const normalized = normalizeSmsText(body);
+  console.log("[twilio-sms-bridge] sms output prepared", {
+    originalLength: body.length,
+    normalizedLength: normalized.length,
+    estimatedParts: estimateSmsParts(normalized),
+    actualParts: parts.length,
+  });
 
   const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
   let lastSid: string | null = null;
