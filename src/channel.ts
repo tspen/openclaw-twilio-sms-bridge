@@ -4,6 +4,10 @@ import {
   createChannelPluginBase,
 } from "openclaw/plugin-sdk/channel-core";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
+import {
+  createTopLevelChannelConfigAdapter,
+  formatTrimmedAllowFromEntries,
+} from "openclaw/plugin-sdk/channel-config-helpers";
 import { dispatchInboundReplyWithBase } from "openclaw/plugin-sdk/inbound-reply-dispatch";
 import { sendTwilioSms } from "./client.js";
 import { getTwilioSmsRuntimeContext, rememberInboundSms } from "./runtime.js";
@@ -19,8 +23,18 @@ type ResolvedAccount = {
   dmPolicy: string | undefined;
 };
 
-function resolveSection(cfg: OpenClawConfig): Record<string, any> {
+function resolveLegacyPluginSection(cfg: OpenClawConfig): Record<string, any> {
   return (((cfg as Record<string, any>)?.plugins?.entries?.["twilio-sms-bridge"]?.config ?? {}) as Record<string, any>);
+}
+
+function resolveChannelSection(cfg: OpenClawConfig): Record<string, any> {
+  return (((cfg as Record<string, any>)?.channels?.["twilio-sms-bridge"] ?? {}) as Record<string, any>);
+}
+
+function resolveSection(cfg: OpenClawConfig): Record<string, any> {
+  const legacy = resolveLegacyPluginSection(cfg);
+  const channel = resolveChannelSection(cfg);
+  return { ...legacy, ...channel };
 }
 
 function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): ResolvedAccount {
@@ -37,25 +51,47 @@ function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): Resolve
     webhookPath: section.webhookPath ?? "/twilio-sms/webhook",
     publicBaseUrl: section.publicBaseUrl,
     allowFrom: section.allowFrom ?? [],
-    dmPolicy: section.dmSecurity,
+    dmPolicy: section.dmPolicy ?? section.dmSecurity,
   };
 }
+
+const twilioSmsConfigAdapter = createTopLevelChannelConfigAdapter<ResolvedAccount>({
+  sectionKey: "twilio-sms-bridge",
+  resolveAccount,
+  inspectAccount(cfg) {
+    const section = resolveSection(cfg);
+    return {
+      enabled: Boolean(section.enabled ?? true),
+      configured: Boolean(section.accountSid && section.authToken && section.fromNumber),
+      accountSidStatus: section.accountSid ? "available" : "missing",
+      authTokenStatus: section.authToken ? "available" : "missing",
+      fromNumberStatus: section.fromNumber ? "available" : "missing",
+    };
+  },
+  deleteMode: "clear-fields",
+  clearBaseFields: [
+    "name",
+    "enabled",
+    "accountSid",
+    "authToken",
+    "fromNumber",
+    "publicBaseUrl",
+    "webhookPath",
+    "allowFrom",
+    "dmPolicy",
+    "dmSecurity",
+  ],
+  resolveAllowFrom: (account) => account.allowFrom,
+  formatAllowFrom: formatTrimmedAllowFromEntries,
+});
 
 export const twilioSmsBridgePlugin = createChatChannelPlugin<ResolvedAccount>({
   base: createChannelPluginBase({
     id: "twilio-sms-bridge",
+    config: twilioSmsConfigAdapter,
     setup: {
       resolveAccount,
-      inspectAccount(cfg) {
-        const section = resolveSection(cfg);
-        return {
-          enabled: Boolean(section.accountSid && section.authToken && section.fromNumber),
-          configured: Boolean(section.accountSid && section.authToken && section.fromNumber),
-          accountSidStatus: section.accountSid ? "available" : "missing",
-          authTokenStatus: section.authToken ? "available" : "missing",
-          fromNumberStatus: section.fromNumber ? "available" : "missing",
-        };
-      },
+      inspectAccount: twilioSmsConfigAdapter.inspectAccount,
     },
   }),
   security: {
@@ -181,21 +217,19 @@ async function processInboundSms({
   });
   const smsInstruction = [
     "[SMS reply mode]",
-    "Reply in telegraph style.",
-    "Very short. Fragments OK. Broken English OK.",
-    "ASCII only when possible.",
+    "Keep replies concise and brief.",
+    "Use plain text. ASCII when possible.",
     "No emoji. No markdown. No smart punctuation.",
-    "No filler. No hedging. No intro. No outro.",
+    "No filler. No intro. No outro.",
     "No follow-up offers unless asked.",
-    "Only core answer. Drop extra detail.",
-    "Target under 120 chars. Hard stop before 140 chars.",
-    "One short message only.",
+    "Answer only the core request; include extra detail only when needed.",
     "",
   ].join("\n");
 
   const ctxPayload = channel.reply.finalizeInboundContext({
     Body: formattedBody,
-    BodyForAgent: `${smsInstruction}${body}`,
+    BodyForAgent: body,
+    GroupSystemPrompt: smsInstruction.trim(),
     RawBody: body,
     CommandBody: body,
     From: from,

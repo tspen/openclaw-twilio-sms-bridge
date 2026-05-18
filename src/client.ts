@@ -4,12 +4,10 @@ export type TwilioSmsConfig = {
   fromNumber: string;
 };
 
-const MAX_SMS_SEGMENTS = 1;
 const GSM_SINGLE_SEGMENT = 160;
 const GSM_MULTI_SEGMENT = 153;
-const SAFE_SMS_MAX_LEN = 120;
 
-function normalizeSmsText(body: string): string {
+export function normalizeSmsText(body: string): string {
   return body
     .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
     .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
@@ -23,34 +21,12 @@ function normalizeSmsText(body: string): string {
     .trim();
 }
 
-function splitSmsText(body: string): string[] {
+export function splitSmsText(body: string): string[] {
   const normalized = normalizeSmsText(body);
-  if (!normalized) return [];
-  if (normalized.length <= SAFE_SMS_MAX_LEN) return [normalized];
-
-  const truncated = `${normalized.slice(0, SAFE_SMS_MAX_LEN - 3).trimEnd()}...`;
-
-  const chunks: string[] = [];
-  let remaining = truncated;
-  while (remaining.length > 0) {
-    if (remaining.length <= GSM_MULTI_SEGMENT) {
-      chunks.push(remaining);
-      break;
-    }
-
-    let splitAt = remaining.lastIndexOf("\n", GSM_MULTI_SEGMENT);
-    if (splitAt < Math.floor(GSM_MULTI_SEGMENT * 0.6)) splitAt = remaining.lastIndexOf(" ", GSM_MULTI_SEGMENT);
-    if (splitAt < Math.floor(GSM_MULTI_SEGMENT * 0.6)) splitAt = GSM_MULTI_SEGMENT;
-
-    const chunk = remaining.slice(0, splitAt).trim();
-    chunks.push(chunk || remaining.slice(0, GSM_MULTI_SEGMENT));
-    remaining = remaining.slice(splitAt).trimStart();
-  }
-
-  return chunks.filter(Boolean).slice(0, MAX_SMS_SEGMENTS);
+  return normalized ? [normalized] : [];
 }
 
-function estimateSmsParts(body: string): number {
+export function estimateSmsParts(body: string): number {
   if (!body) return 0;
   if (body.length <= GSM_SINGLE_SEGMENT) return 1;
   return Math.ceil(body.length / GSM_MULTI_SEGMENT);

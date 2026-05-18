@@ -5,8 +5,20 @@
   "type": "module",
   "private": true,
   "license": "MIT",
+  "scripts": {
+    "test": "tsx --test tests/*.test.ts"
+  },
   "openclaw": {
-    "extensions": ["./index.ts", "./setup-entry.ts"],
+    "extensions": ["./index.ts"],
+    "setupEntry": "./setup-entry.ts",
+    "channel": {
+      "id": "twilio-sms-bridge",
+      "label": "Twilio SMS Bridge",
+      "selectionLabel": "Twilio SMS Bridge",
+      "detailLabel": "Twilio SMS",
+      "blurb": "Connect OpenClaw to SMS via Twilio webhooks.",
+      "systemImage": "message"
+    },
     "compat": {
       "pluginApi": ">=2026.3.24-beta.2",
       "minGatewayVersion": ">=2026.3.24-beta.2"
@@ -18,5 +30,8 @@
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.41"
+  },
+  "devDependencies": {
+    "tsx": "^4.22.1"
   }
 }

@@ -1,5 +1,12 @@
 {
   "id": "twilio-sms-bridge",
+  "kind": "channel",
+  "channels": [
+    "twilio-sms-bridge"
+  ],
+  "activation": {
+    "onStartup": false
+  },
   "name": "Twilio SMS Bridge",
   "description": "Custom SMS channel plugin for OpenClaw via Twilio",
   "configSchema": {
@@ -18,5 +25,48 @@
       "dmSecurity": { "type": "string", "default": "allowlist" }
     },
     "additionalProperties": false
+  },
+  "channelConfigs": {
+    "twilio-sms-bridge": {
+      "label": "Twilio SMS Bridge",
+      "description": "Connect OpenClaw to SMS via Twilio.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "accountSid": { "type": "string" },
+          "authToken": { "type": "string" },
+          "fromNumber": { "type": "string" },
+          "publicBaseUrl": { "type": "string" },
+          "webhookPath": { "type": "string", "default": "/twilio-sms/webhook" },
+          "allowFrom": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": []
+          },
+          "dmPolicy": {
+            "type": "string",
+            "enum": ["pairing", "allowlist", "open", "disabled"],
+            "default": "allowlist"
+          },
+          "dmSecurity": {
+            "type": "string",
+            "enum": ["pairing", "allowlist", "open", "disabled"]
+          }
+        }
+      },
+      "uiHints": {
+        "accountSid": { "label": "Twilio Account SID" },
+        "authToken": { "label": "Twilio Auth Token" },
+        "fromNumber": { "label": "Twilio From Number" },
+        "publicBaseUrl": { "label": "Public Base URL" },
+        "webhookPath": { "label": "Webhook Path" },
+        "allowFrom": { "label": "Allowed Phone Numbers" },
+        "dmPolicy": { "label": "DM Policy" }
+      }
+    }
   }
 }
