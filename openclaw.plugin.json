@@ -17,6 +17,7 @@
       "fromNumber": { "type": "string" },
       "publicBaseUrl": { "type": "string" },
       "webhookPath": { "type": "string", "default": "/twilio-sms/webhook" },
+      "statusCallbackPath": { "type": "string", "default": "/twilio-sms/status" },
       "allowFrom": {
         "type": "array",
         "items": { "type": "string" },
@@ -55,6 +56,7 @@
           "fromNumber": { "type": "string" },
           "publicBaseUrl": { "type": "string" },
           "webhookPath": { "type": "string", "default": "/twilio-sms/webhook" },
+          "statusCallbackPath": { "type": "string", "default": "/twilio-sms/status" },
           "allowFrom": {
             "type": "array",
             "items": { "type": "string" },
@@ -82,6 +84,7 @@
         "fromNumber": { "label": "Twilio From Number" },
         "publicBaseUrl": { "label": "Public Base URL" },
         "webhookPath": { "label": "Webhook Path" },
+        "statusCallbackPath": { "label": "Status Callback Path" },
         "allowFrom": { "label": "Allowed Phone Numbers" },
         "dmPolicy": { "label": "DM Policy" }
       }

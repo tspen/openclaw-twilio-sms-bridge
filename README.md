@@ -13,6 +13,9 @@ It currently provides:
 - OpenClaw session routing and reply dispatch
 - outbound SMS sending through Twilio
 - plain-text-safe SMS output normalization
+- inbound webhook idempotency by Twilio `MessageSid`
+- outbound delivery status callback tracking
+- transient Twilio send retries with capped backoff
 
 ## Intended architecture
 
@@ -30,13 +33,15 @@ Working now:
 - inbound Twilio webhook route
 - OpenClaw DM session routing by phone number
 - asynchronous webhook ack to avoid Twilio timeouts
+- duplicate inbound webhook suppression
 - outbound Twilio SMS replies
+- outbound Twilio delivery status callback route
+- transient Twilio send retries
 - plain-text-safe SMS output normalization
 - conversation continuity through normal OpenClaw session handling
 - tested with live Twilio traffic
 
 Still worth doing:
-- better production hardening and retries
 - richer logging/metrics
 - optional packaging/publishing cleanup
 
@@ -49,8 +54,8 @@ Done:
 - sample config uses placeholder phone numbers
 
 Before upstreaming or wider promotion, still recommended:
-- optionally add lightweight tests
-- add replay protection / abuse controls
+- expand integration tests around webhook routing
+- add persistent storage for idempotency and delivery status if the gateway process is expected to restart often
 
 ## Files
 
@@ -84,8 +89,9 @@ Plugin config lives under:
           "fromNumber": "+15551234567",
           "publicBaseUrl": "https://example.ts.net",
           "webhookPath": "/twilio-sms/webhook",
+          "statusCallbackPath": "/twilio-sms/status",
           "allowFrom": ["+15557654321"],
-          "dmSecurity": "allowlist"
+          "dmPolicy": "allowlist"
         }
       }
     }
@@ -96,8 +102,8 @@ Plugin config lives under:
 ## Suggested next steps
 
 1. Keep Funnel running under a service, not a manual shell.
-2. Add Twilio request signature validation.
-3. Commit or publish the plugin package somewhere durable.
+2. Add richer metrics/log summaries for delivery status and retry behavior.
+3. Publish the plugin package somewhere durable if it should be installable outside this workspace.
 
 ## Twilio webhook shape
 
@@ -106,6 +112,12 @@ Twilio inbound SMS webhooks are `application/x-www-form-urlencoded` and usually 
 - `To`
 - `Body`
 - `MessageSid`
+
+Outbound delivery status callbacks are handled at `statusCallbackPath` and usually include fields like:
+- `MessageSid`
+- `MessageStatus`
+- `ErrorCode`
+- `ErrorMessage`
 
 ## Security
 

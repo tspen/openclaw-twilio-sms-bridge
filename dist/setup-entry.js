@@ -20,6 +20,18 @@ import {
 } from "openclaw/plugin-sdk/status-helpers";
 
 // src/client.ts
+var TwilioSmsSendError = class extends Error {
+  status;
+  responseBody;
+  retryable;
+  constructor(message, opts) {
+    super(message);
+    this.name = "TwilioSmsSendError";
+    this.status = opts.status;
+    this.responseBody = opts.responseBody;
+    this.retryable = opts.retryable;
+  }
+};
 var GSM_SINGLE_SEGMENT = 160;
 var GSM_MULTI_SEGMENT = 153;
 function normalizeSmsText(body) {
@@ -34,10 +46,18 @@ function estimateSmsParts(body) {
   if (body.length <= GSM_SINGLE_SEGMENT) return 1;
   return Math.ceil(body.length / GSM_MULTI_SEGMENT);
 }
-async function sendTwilioSms(cfg, to, body) {
+function isRetryableTwilioStatus(status) {
+  return status === 408 || status === 429 || status >= 500;
+}
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+async function sendTwilioSms(cfg, to, body, options = {}) {
   const accountSid = cfg.accountSid.trim();
   const authToken = cfg.authToken.trim();
   const fromNumber = cfg.fromNumber.trim();
+  const maxAttempts = Math.max(1, options.maxAttempts ?? 3);
+  const retryDelayMs = Math.max(0, options.retryDelayMs ?? 500);
   const parts = splitSmsText(body);
   if (!parts.length) return { sid: null };
   const normalized = normalizeSmsText(body);
@@ -54,23 +74,47 @@ async function sendTwilioSms(cfg, to, body) {
     params.set("To", to);
     params.set("From", fromNumber);
     params.set("Body", part);
-    const res = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${auth}`,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: params
+    if (cfg.statusCallbackUrl) params.set("StatusCallback", cfg.statusCallbackUrl);
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const res = await fetch(
+          `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Basic ${auth}`,
+              "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: params
+          }
+        );
+        if (!res.ok) {
+          const text = await res.text();
+          const retryable = isRetryableTwilioStatus(res.status);
+          if (retryable && attempt < maxAttempts) {
+            await sleep(retryDelayMs * attempt);
+            continue;
+          }
+          throw new TwilioSmsSendError(`twilio sms send failed: ${res.status} ${text}`, {
+            status: res.status,
+            responseBody: text,
+            retryable
+          });
+        }
+        const json = await res.json();
+        lastSid = json.sid ?? null;
+        break;
+      } catch (error) {
+        if (error instanceof TwilioSmsSendError) throw error;
+        if (attempt < maxAttempts) {
+          await sleep(retryDelayMs * attempt);
+          continue;
+        }
+        throw new TwilioSmsSendError(`twilio sms send failed: ${error instanceof Error ? error.message : String(error)}`, {
+          retryable: true
+        });
       }
-    );
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`twilio sms send failed: ${res.status} ${text}`);
     }
-    const json = await res.json();
-    lastSid = json.sid ?? null;
   }
   return { sid: lastSid };
 }
@@ -78,6 +122,28 @@ async function sendTwilioSms(cfg, to, body) {
 // src/runtime-store.ts
 import { createPluginRuntimeStore } from "openclaw/plugin-sdk/runtime-store";
 var { setRuntime: setTwilioSmsRuntime, getRuntime: getTwilioSmsRuntime } = createPluginRuntimeStore("Twilio SMS runtime not initialized");
+
+// src/state.ts
+var outboundStatuses = /* @__PURE__ */ new Map();
+var TRACKED_ITEM_TTL_MS = 24 * 60 * 60 * 1e3;
+var MAX_TRACKED_ITEMS = 200;
+function pruneMapByAge(map, readTimestamp, now = Date.now()) {
+  for (const [key, item] of map) {
+    if (now - readTimestamp(item) > TRACKED_ITEM_TTL_MS) map.delete(key);
+  }
+  while (map.size > MAX_TRACKED_ITEMS) {
+    const oldestKey = map.keys().next().value;
+    if (!oldestKey) break;
+    map.delete(oldestKey);
+  }
+}
+function rememberOutboundSmsStatus(status) {
+  outboundStatuses.set(status.sid, status);
+  pruneMapByAge(outboundStatuses, (item) => item.updatedAt, status.updatedAt);
+}
+function listRecentOutboundSmsStatuses() {
+  return Array.from(outboundStatuses.values()).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 20);
+}
 
 // src/channel.ts
 function resolveLegacyPluginSection(cfg) {
@@ -102,6 +168,7 @@ function resolveAccount(cfg, accountId) {
     authToken: section.authToken,
     fromNumber: section.fromNumber,
     webhookPath: section.webhookPath ?? "/twilio-sms/webhook",
+    statusCallbackPath: section.statusCallbackPath ?? "/twilio-sms/status",
     publicBaseUrl: section.publicBaseUrl,
     allowFrom: section.allowFrom ?? [],
     dmPolicy: section.dmPolicy ?? section.dmSecurity
@@ -136,6 +203,7 @@ var twilioSmsConfigAdapter = createTopLevelChannelConfigAdapter({
     "fromNumber",
     "publicBaseUrl",
     "webhookPath",
+    "statusCallbackPath",
     "allowFrom",
     "dmPolicy",
     "dmSecurity"
@@ -199,7 +267,9 @@ var twilioSmsBridgePlugin = createChatChannelPlugin({
           running: true,
           connected: true,
           healthState: "ok",
-          webhookPath: account.webhookPath
+          webhookPath: account.webhookPath,
+          statusCallbackPath: account.statusCallbackPath,
+          recentDeliveryStatuses: listRecentOutboundSmsStatuses().slice(0, 5)
         }
       })
     })
@@ -232,12 +302,28 @@ var twilioSmsBridgePlugin = createChatChannelPlugin({
       channel: "twilio-sms-bridge",
       sendText: async (params) => {
         const account = resolveAccount(params.cfg, params.accountId ?? void 0);
-        const result = await sendTwilioSms(account, params.to, params.text);
+        const result = await sendTwilioSms(withStatusCallbackUrl(account), params.to, params.text);
+        if (result.sid) {
+          rememberOutboundSmsStatus({
+            sid: result.sid,
+            to: params.to,
+            from: account.fromNumber,
+            status: "queued",
+            updatedAt: Date.now()
+          });
+        }
         return { messageId: result.sid ?? void 0 };
       }
     }
   }
 });
+function withStatusCallbackUrl(account) {
+  if (!account.publicBaseUrl) return account;
+  return {
+    ...account,
+    statusCallbackUrl: new URL(account.statusCallbackPath, account.publicBaseUrl).toString()
+  };
+}
 
 // setup-entry.ts
 var setup_entry_default = defineSetupPluginEntry(twilioSmsBridgePlugin);

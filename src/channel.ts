@@ -17,7 +17,13 @@ import {
   createComputedAccountStatusAdapter,
 } from "openclaw/plugin-sdk/status-helpers";
 import { sendTwilioSms } from "./client.js";
-import { getTwilioSmsRuntimeContext, rememberInboundSms } from "./runtime.js";
+import {
+  getTwilioSmsRuntimeContext,
+  listRecentOutboundSmsStatuses,
+  markInboundSmsSeen,
+  rememberInboundSms,
+  rememberOutboundSmsStatus,
+} from "./runtime.js";
 
 type ResolvedAccount = {
   accountId: string | null;
@@ -25,6 +31,7 @@ type ResolvedAccount = {
   authToken: string;
   fromNumber: string;
   webhookPath: string;
+  statusCallbackPath: string;
   publicBaseUrl?: string;
   allowFrom: string[];
   dmPolicy: string | undefined;
@@ -64,6 +71,7 @@ function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): Resolve
     authToken: section.authToken,
     fromNumber: section.fromNumber,
     webhookPath: section.webhookPath ?? "/twilio-sms/webhook",
+    statusCallbackPath: section.statusCallbackPath ?? "/twilio-sms/status",
     publicBaseUrl: section.publicBaseUrl,
     allowFrom: section.allowFrom ?? [],
     dmPolicy: section.dmPolicy ?? section.dmSecurity,
@@ -100,6 +108,7 @@ const twilioSmsConfigAdapter = createTopLevelChannelConfigAdapter<ResolvedAccoun
     "fromNumber",
     "publicBaseUrl",
     "webhookPath",
+    "statusCallbackPath",
     "allowFrom",
     "dmPolicy",
     "dmSecurity",
@@ -166,6 +175,8 @@ export const twilioSmsBridgePlugin = createChatChannelPlugin<ResolvedAccount>({
           connected: true,
           healthState: "ok",
           webhookPath: account.webhookPath,
+          statusCallbackPath: account.statusCallbackPath,
+          recentDeliveryStatuses: listRecentOutboundSmsStatuses().slice(0, 5),
         },
       }),
     }),
@@ -199,7 +210,16 @@ export const twilioSmsBridgePlugin = createChatChannelPlugin<ResolvedAccount>({
       channel: "twilio-sms-bridge",
       sendText: async (params) => {
         const account = resolveAccount(params.cfg, params.accountId ?? undefined);
-        const result = await sendTwilioSms(account, params.to, params.text);
+        const result = await sendTwilioSms(withStatusCallbackUrl(account), params.to, params.text);
+        if (result.sid) {
+          rememberOutboundSmsStatus({
+            sid: result.sid,
+            to: params.to,
+            from: account.fromNumber,
+            status: "queued",
+            updatedAt: Date.now(),
+          });
+        }
         return { messageId: result.sid ?? undefined };
       },
     },
@@ -226,11 +246,16 @@ export function registerTwilioSmsWebhook(api: any): void {
         if (!runtimeCtx) throw new Error("twilio-sms-bridge runtime context unavailable");
         const runtimeAccount = resolveAccount(runtimeCtx.cfg, runtimeCtx.accountId ?? undefined);
 
-        validateTwilioWebhookSignature(req, runtimeAccount, form);
+        validateTwilioWebhookSignature(req, runtimeAccount, form, runtimeAccount.webhookPath);
 
         res.statusCode = 200;
         res.setHeader("Content-Type", "text/xml");
         res.end("<Response></Response>");
+
+        if (markInboundSmsSeen(messageSid)) {
+          console.log("[twilio-sms-bridge] duplicate inbound webhook ignored", { from, to, messageSid });
+          return true;
+        }
 
         void processInboundSms({ from, to, body, messageSid, accountId, runtimeCtx }).catch((error) => {
           console.error("[twilio-sms-bridge] inbound processing failed", {
@@ -247,6 +272,45 @@ export function registerTwilioSmsWebhook(api: any): void {
         res.statusCode = error instanceof Error && error.message.includes("invalid Twilio signature") ? 403 : 200;
         res.setHeader("Content-Type", "text/xml");
         res.end("<Response></Response>");
+        return true;
+      }
+    },
+  });
+
+  api.registerHttpRoute({
+    path: account.statusCallbackPath,
+    auth: "plugin",
+    handler: async (req: any, res: any) => {
+      try {
+        const raw = await readRequestBody(req);
+        const form = new URLSearchParams(raw);
+        const accountId = null;
+        const runtimeCtx = getTwilioSmsRuntimeContext(accountId);
+        if (!runtimeCtx) throw new Error("twilio-sms-bridge runtime context unavailable");
+        const runtimeAccount = resolveAccount(runtimeCtx.cfg, runtimeCtx.accountId ?? undefined);
+
+        validateTwilioWebhookSignature(req, runtimeAccount, form, runtimeAccount.statusCallbackPath);
+
+        const sid = form.get("MessageSid") ?? form.get("SmsSid");
+        if (sid) {
+          rememberOutboundSmsStatus({
+            sid,
+            to: form.get("To") ?? undefined,
+            from: form.get("From") ?? undefined,
+            status: form.get("MessageStatus") ?? form.get("SmsStatus") ?? undefined,
+            errorCode: form.get("ErrorCode"),
+            errorMessage: form.get("ErrorMessage"),
+            updatedAt: Date.now(),
+          });
+        }
+
+        res.statusCode = 204;
+        res.end();
+        return true;
+      } catch (error) {
+        console.error("[twilio-sms-bridge] status callback failed", error);
+        res.statusCode = error instanceof Error && error.message.includes("invalid Twilio signature") ? 403 : 204;
+        res.end();
         return true;
       }
     },
@@ -348,8 +412,17 @@ async function processInboundSms({
       if (!text.trim()) return;
       const account = resolveAccount(cfg, resolvedRuntimeCtx.accountId ?? undefined);
       console.log("[twilio-sms-bridge] sending outbound sms", { to: from, messageSid, textLength: text.length });
-      await sendTwilioSms(account, from, text);
-      console.log("[twilio-sms-bridge] outbound sms sent", { to: from, messageSid });
+      const result = await sendTwilioSms(withStatusCallbackUrl(account), from, text);
+      if (result.sid) {
+        rememberOutboundSmsStatus({
+          sid: result.sid,
+          to: from,
+          from: account.fromNumber,
+          status: "queued",
+          updatedAt: Date.now(),
+        });
+      }
+      console.log("[twilio-sms-bridge] outbound sms sent", { to: from, messageSid, sid: result.sid });
     },
     onRecordError: (error) => {
       throw error instanceof Error ? error : new Error(`twilio-sms-bridge session record failed: ${String(error)}`);
@@ -362,15 +435,26 @@ async function processInboundSms({
   console.log("[twilio-sms-bridge] inbound processing complete", { from, to, messageSid, sessionKey: route.sessionKey });
 }
 
-function validateTwilioWebhookSignature(req: any, account: ResolvedAccount, params: URLSearchParams): void {
+function validateTwilioWebhookSignature(req: any, account: ResolvedAccount, params: URLSearchParams, path: string): void {
   if (!account.publicBaseUrl) throw new Error("twilio-sms-bridge: publicBaseUrl is required for signature validation");
   const signature = String(req.headers?.["x-twilio-signature"] ?? "");
   if (!signature) throw new Error("twilio-sms-bridge: missing X-Twilio-Signature header");
-  const url = new URL(account.webhookPath, account.publicBaseUrl).toString();
+  const url = new URL(path, account.publicBaseUrl).toString();
   const expected = crypto.createHmac("sha1", account.authToken.trim()).update(buildTwilioDataToSign(url, params)).digest("base64");
+  if (Buffer.byteLength(signature) !== Buffer.byteLength(expected)) {
+    throw new Error("twilio-sms-bridge: invalid Twilio signature");
+  }
   if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
     throw new Error("twilio-sms-bridge: invalid Twilio signature");
   }
+}
+
+function withStatusCallbackUrl(account: ResolvedAccount): ResolvedAccount & { statusCallbackUrl?: string } {
+  if (!account.publicBaseUrl) return account;
+  return {
+    ...account,
+    statusCallbackUrl: new URL(account.statusCallbackPath, account.publicBaseUrl).toString(),
+  };
 }
 
 function buildTwilioDataToSign(url: string, params: URLSearchParams): string {

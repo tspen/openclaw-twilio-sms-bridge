@@ -8,6 +8,8 @@ Current protections:
 - Twilio webhook signature validation using `X-Twilio-Signature`
 - OpenClaw-side sender allowlist support through `allowFrom`
 - asynchronous webhook acknowledgement to reduce timeout pressure
+- in-process duplicate inbound webhook suppression by Twilio `MessageSid`
+- outbound Twilio delivery status callback tracking
 - plain-text-safe outbound SMS normalization
 
 ## Required configuration
@@ -21,8 +23,9 @@ Set these fields in plugin config:
   "fromNumber": "+15551234567",
   "publicBaseUrl": "https://your-public-host.example.com",
   "webhookPath": "/twilio-sms/webhook",
+  "statusCallbackPath": "/twilio-sms/status",
   "allowFrom": ["+15557654321"],
-  "dmSecurity": "allowlist"
+  "dmPolicy": "allowlist"
 }
 ```
 
@@ -34,9 +37,9 @@ Notes:
 ## Current limitations
 
 This is still early-stage software. Recommended future improvements:
-- replay protection for webhook deliveries
+- persistent replay protection if gateway restarts are expected
 - structured audit logging
-- test coverage for signature validation and outbound formatting
+- broader integration test coverage for webhook routing
 - rate limiting / abuse controls if exposed beyond a tight allowlist
 
 ## Reporting issues
