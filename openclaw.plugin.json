@@ -22,7 +22,20 @@
         "items": { "type": "string" },
         "default": []
       },
-      "dmSecurity": { "type": "string", "default": "allowlist" }
+      "groupAllowFrom": {
+        "type": "array",
+        "items": { "type": ["string", "number"] },
+        "default": []
+      },
+      "dmPolicy": {
+        "type": "string",
+        "enum": ["pairing", "allowlist", "open", "disabled"],
+        "default": "allowlist"
+      },
+      "dmSecurity": {
+        "type": "string",
+        "enum": ["pairing", "allowlist", "open", "disabled"]
+      }
     },
     "additionalProperties": false
   },
@@ -45,6 +58,11 @@
           "allowFrom": {
             "type": "array",
             "items": { "type": "string" },
+            "default": []
+          },
+          "groupAllowFrom": {
+            "type": "array",
+            "items": { "type": ["string", "number"] },
             "default": []
           },
           "dmPolicy": {

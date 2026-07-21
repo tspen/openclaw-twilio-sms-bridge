@@ -6,6 +6,7 @@
   "private": true,
   "license": "MIT",
   "scripts": {
+    "build": "esbuild index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:openclaw/* && esbuild setup-entry.ts --bundle --platform=node --format=esm --outfile=dist/setup-entry.js --external:openclaw/*",
     "test": "tsx --test tests/*.test.ts"
   },
   "openclaw": {
@@ -32,6 +33,7 @@
     "@sinclair/typebox": "^0.34.41"
   },
   "devDependencies": {
+    "esbuild": "^0.27.2",
     "tsx": "^4.22.1"
   }
 }
