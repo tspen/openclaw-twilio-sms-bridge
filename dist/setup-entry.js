@@ -19,6 +19,36 @@ import {
   createComputedAccountStatusAdapter
 } from "openclaw/plugin-sdk/status-helpers";
 
+// src/config.ts
+function resolveLegacyPluginSection(cfg) {
+  return cfg?.plugins?.entries?.["twilio-sms-bridge"]?.config ?? {};
+}
+function resolveChannelSection(cfg) {
+  return cfg?.channels?.["twilio-sms-bridge"] ?? {};
+}
+function resolveSection(cfg) {
+  const legacy = resolveLegacyPluginSection(cfg);
+  const channel = resolveChannelSection(cfg);
+  return { ...legacy, ...channel };
+}
+function resolveAccount(cfg, accountId) {
+  const section = resolveSection(cfg);
+  if (!section.accountSid) throw new Error("twilio-sms-bridge: accountSid is required");
+  if (!section.authToken) throw new Error("twilio-sms-bridge: authToken is required");
+  if (!section.fromNumber) throw new Error("twilio-sms-bridge: fromNumber is required");
+  return {
+    accountId: accountId ?? null,
+    accountSid: section.accountSid,
+    authToken: section.authToken,
+    fromNumber: section.fromNumber,
+    webhookPath: section.webhookPath ?? "/twilio-sms/webhook",
+    statusCallbackPath: section.statusCallbackPath ?? "/twilio-sms/status",
+    publicBaseUrl: section.publicBaseUrl,
+    allowFrom: section.allowFrom ?? [],
+    dmPolicy: section.dmPolicy ?? section.dmSecurity
+  };
+}
+
 // src/client.ts
 var TwilioSmsSendError = class extends Error {
   status;
@@ -146,34 +176,6 @@ function listRecentOutboundSmsStatuses() {
 }
 
 // src/channel.ts
-function resolveLegacyPluginSection(cfg) {
-  return cfg?.plugins?.entries?.["twilio-sms-bridge"]?.config ?? {};
-}
-function resolveChannelSection(cfg) {
-  return cfg?.channels?.["twilio-sms-bridge"] ?? {};
-}
-function resolveSection(cfg) {
-  const legacy = resolveLegacyPluginSection(cfg);
-  const channel = resolveChannelSection(cfg);
-  return { ...legacy, ...channel };
-}
-function resolveAccount(cfg, accountId) {
-  const section = resolveSection(cfg);
-  if (!section.accountSid) throw new Error("twilio-sms-bridge: accountSid is required");
-  if (!section.authToken) throw new Error("twilio-sms-bridge: authToken is required");
-  if (!section.fromNumber) throw new Error("twilio-sms-bridge: fromNumber is required");
-  return {
-    accountId: accountId ?? null,
-    accountSid: section.accountSid,
-    authToken: section.authToken,
-    fromNumber: section.fromNumber,
-    webhookPath: section.webhookPath ?? "/twilio-sms/webhook",
-    statusCallbackPath: section.statusCallbackPath ?? "/twilio-sms/status",
-    publicBaseUrl: section.publicBaseUrl,
-    allowFrom: section.allowFrom ?? [],
-    dmPolicy: section.dmPolicy ?? section.dmSecurity
-  };
-}
 function normalizePhoneTarget(raw) {
   const stripped = stripTargetKindPrefix(stripChannelTargetPrefix(raw, "twilio-sms-bridge", "twilio", "sms")).trim();
   const normalized = stripped.replace(/[^\d+]/g, "");

@@ -65,3 +65,9 @@ export function listRecentOutboundSmsStatuses(): OutboundSmsStatus[] {
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, 20);
 }
+
+export function resetTwilioSmsStateForTests(): void {
+  recentInbound.clear();
+  processedInbound.clear();
+  outboundStatuses.clear();
+}
