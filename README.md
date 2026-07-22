@@ -123,6 +123,9 @@ Outbound delivery status callbacks are handled at `statusCallbackPath` and usual
 
 See `SECURITY.md` for the security model and required `publicBaseUrl` setting used for Twilio signature validation.
 
+If this channel can reach OpenClaw tool plugins that perform public actions, review the
+`SECURITY.md` tool-plugin guidance before enabling access from SMS senders.
+
 ## Caveat
 
 The bridge is working in a real OpenClaw + Twilio setup, but I would still describe it as early-stage rather than production-hardened.
